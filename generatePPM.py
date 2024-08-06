@@ -54,7 +54,7 @@ def endmodule(output_file):
 N, M=4, 4
 PPM_tree = tree(N, M)
 
-PPM=open("test.v", 'w')
+PPM=open("PPM.v", 'w')
 header(PPM, 4, 4)
 generatePPM(PPM, PPM_tree, 4, 4)
 endmodule(PPM)
