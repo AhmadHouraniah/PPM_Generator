@@ -41,24 +41,51 @@ def instance():
     return instance_count - 1
 
 def AND(output_file, A, B, C):
+    output_file.write(f"\twire {C};\n")
     output_file.write(f"\tAND2 instance_{instance()} (.A({A}), .B({B}), .C({C}));\n")
 
+def NAND(output_file, A, B, C):
+    output_file.write(f"\twire {C};\n")
+    output_file.write(f"\tNAND2 instance_{instance()} (.A({A}), .B({B}), .C({C}));\n")
+
 def HA(output_file, A, B, COUT, SUM):
+    output_file.write(f"\twire {COUT}, {SUM};\n")
     output_file.write(f"\tHA instance_{instance()} (.A({A}), .B({B}), .COUT({COUT}), .SUM({SUM}));\n")
 
 def FA(output_file, A, B, CIN, COUT, SUM):
+    output_file.write(f"\twire {COUT}, {SUM};\n")
     output_file.write(f"\tFA instance_{instance()} (.A({A}), .B({B}), .CIN({CIN}), .COUT({COUT}), .SUM({SUM}));\n")
 
 def BYPASS(output_file, IN, OUT):
+    output_file.write(f"\twire {OUT};\n")
     output_file.write(f"\tassign {OUT} = {IN};\n")
+
+def CONST_ONE(output_file, IN):
+    output_file.write(f"\twire {IN} = 1'b1;\n")
+
 
 def generatePPM(output_file, tree, N, M):
     for i in range(N):
-        for j in range(M):
-            x = i + j
-            y = tree.push(x)
-            AND(output_file, f"A[{i}]", f"B[{j}]", f"level_0_{x}_{y}_")
-
+        if(i==N-1):
+            for j in range(M):
+                x = i + j
+                y = tree.push(x)
+                if(j==M-1):
+                    AND(output_file, f"A[{i}]", f"B[{j}]", f"level_0__{x}_{y}_")
+                else:
+                    NAND(output_file, f"A[{i}]", f"B[{j}]", f"level_0__{x}_{y}_")
+        else:
+            for j in range(M):
+                x = i + j
+                y = tree.push(x)
+                if(j==M-1):
+                    NAND(output_file, f"A[{i}]", f"B[{j}]", f"level_0__{x}_{y}_")
+                else:
+                    AND(output_file, f"A[{i}]", f"B[{j}]", f"level_0__{x}_{y}_")    
+    CONST_ONE(output_file, f"level_0__{N}_{tree.push(N)}_")
+    CONST_ONE(output_file, f"level_0__{M+N-1}_{tree.push(M+N-1)}_")
+        
+   
 def header(output_file, N, M):
     output_file.write(f"""
 module PPM(A, B, OUT1, OUT2);
@@ -73,39 +100,69 @@ def endmodule(output_file):
     output_file.write("endmodule\n")
 
 def reduce(output_file, level, tree):
-    for i in range(tree.width()):
-        j, k = 0, 0
-        while tree.get_depth(i) > 3:
-            print("FA")
-            FA(output_file, f"level_{level}_{i}_{j}_", f"level_{level}_{i}_{j+1}_", f"level_{level}_{i}_{j+2}_", f"level_{level+1}_{i+1}_{k}_", f"level_{level+1}_{i}_{k+1}_")
+    curr_col, next_col, output_next_row = 0, 0, 0
+    for i in range(0, tree.width()):
+        curr_col = output_next_row
+        next_col = 0
+        input_row = 0
+        output_row = output_next_row
+        output_next_row = 0 
+        while tree.get_depth(i) >= 3:
+            FA(output_file, f"level_{level}__{i}_{input_row}_", f"level_{level}__{i}_{input_row+1}_", f"level_{level}__{i}_{input_row+2}_", f"level_{level+1}__{i+1}_{output_next_row}_", f"level_{level+1}__{i}_{output_row}_")
             tree.set_column(i, tree.get_depth(i) - 3)
-            k += 2
-            j += 3
-        while tree.get_depth(i) > 2:
-            print("HA")
-            HA(output_file, f"level_{level}_{i}_{j}_", f"level_{level}_{i}_{j+1}_", f"level_{level+1}_{i+1}_{k}_", f"level_{level+1}_{i}_{k+1}_")
+            input_row += 3
+            curr_col += 1
+            next_col += 1
+            output_row += 1
+            output_next_row += 1
+        while tree.get_depth(i) >= 2:
+            HA(output_file, f"level_{level}__{i}_{input_row}_", f"level_{level}__{i}_{input_row+1}_", f"level_{level+1}__{i+1}_{output_next_row}_", f"level_{level+1}__{i}_{output_row}_")
             tree.set_column(i, tree.get_depth(i) - 2)
-            k += 2
-            j += 2
-        while tree.get_depth(i) > 1:
-            print("BYPASS")
-            BYPASS(output_file, f"level_{level}_{i}_{j}_", f"level_{level+1}_{i}_{k}_")
+            input_row += 2
+            curr_col += 1
+            next_col += 1
+            output_row += 1
+            output_next_row += 1
+        while tree.get_depth(i) >= 1:
+            BYPASS(output_file, f"level_{level}__{i}_{input_row}_", f"level_{level+1}__{i}_{output_row}_")
             tree.set_column(i, tree.get_depth(i) - 1)
-            k += 1
-            j += 1
-        tree.set_column(i, k+k_prev)
+            input_row +=1
+            curr_col += 1
+            output_row +=1
+        tree.set_column(i, curr_col)
+
+def assign_outputs(output_file, level, tree):
+    a=[]
+    b=[]
+    for i in range(tree.width()):
+        if(tree.get_depth(i)>0):
+            a.append(f"level_{level}__{i}_0_")
+        else:
+            a.append("1'b0")
+        if(tree.get_depth(i)>1):
+            b.append(f"level_{level}__{i}_1_")
+        else:
+            b.append("1'b0")
+    output_file.write("\tassign OUT1={"+", ".join(a[::-1])+"};\n")
+    output_file.write("\tassign OUT2={"+", ".join(b[::-1])+"};\n")
+
+        
+
 N, M=4, 4
 PPM_tree = tree(N, M)
 
 PPM=open("PPM.v", 'w')
 header(PPM, N, M)
 generatePPM(PPM, PPM_tree, N, M)
-
+print(PPM_tree.get_partial_products())
 level = 0
 while(PPM_tree.get_guidance()[1]>2):
-    print("Enteing Reduce")
+    PPM.write(f"\t//Level {level}\n")
     reduce(PPM, level, PPM_tree)
     level+=1
+    print(PPM_tree.get_partial_products())
+assign_outputs(PPM,level,PPM_tree)
 endmodule(PPM)
 print(PPM_tree.get_partial_products())
 print(PPM_tree.get_guidance())
+PPM.close()

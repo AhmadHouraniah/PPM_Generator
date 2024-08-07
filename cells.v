@@ -33,3 +33,9 @@ module AND2(A, B, C);
     output C;
     assign C = A&B;
 endmodule
+
+module NAND2(A, B, C);
+    input A, B;
+    output C;
+    assign C = ~ A&B;
+endmodule
